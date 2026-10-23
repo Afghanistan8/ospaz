@@ -1,8 +1,27 @@
 import { useEffect, useMemo, useState } from 'react'
 
 type Plan = 'margin' | 'reduce' | 'stop'
+type MonitorTab = 'bots' | 'vaults' | 'traders'
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+
+const monitorData = {
+  bots: [
+    { name: 'BTC neutral grid', symbol: 'BTC-USD', status: 'Needs attention', detail: 'No child-order fill recorded in the last 18 minutes.', tag: 'Check range' },
+    { name: 'ETH accumulation TWAP', symbol: 'ETH-USD', status: 'Working normally', detail: '12 of 16 slices have fired; strategy remains active.', tag: 'Active' },
+    { name: 'SOL momentum grid', symbol: 'SOL-USD', status: 'Stopped', detail: 'Strike reports this grid bot as stopped. No new orders can be placed.', tag: 'Stopped' },
+  ],
+  vaults: [
+    { name: 'Delta Harbor', status: 'Operational signals present', detail: 'Active · verified · positive equity · Sharpe data available', metric: '12.4% 30D return' },
+    { name: 'Northstar Macro', status: 'Review before depositing', detail: 'Active, but no verified badge in this demo record.', metric: '6.2% 30D return' },
+    { name: 'Orbit Yield', status: 'Not accepting new capital', detail: 'Vault status is paused. This is not an eligible deposit target.', metric: 'Paused' },
+  ],
+  traders: [
+    { name: 'LumenTrades', status: 'Compatible with your safety profile', detail: 'Historical win rate is stable and drawdown remains inside your selected limit.', metric: '68.4% win rate' },
+    { name: 'PerpPilot_09', status: 'High return, high risk', detail: 'Historical success rate is strong, but maximum drawdown exceeds your safety preference.', metric: '74.1% win rate' },
+    { name: 'Mercury Loop', status: 'Too little history', detail: 'Not enough completed-trade history to score responsibly.', metric: 'Insufficient data' },
+  ],
+} as const
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
@@ -22,6 +41,8 @@ export default function App() {
   const [showPlan, setShowPlan] = useState(false)
   const [toast, setToast] = useState('')
   const [mode, setMode] = useState<'live' | 'demo'>('demo')
+  const [monitorTab, setMonitorTab] = useState<MonitorTab>('bots')
+  const [lastScan, setLastScan] = useState('Ready to analyze')
 
   useEffect(() => {
     const timer = window.setInterval(() => setPrice((value) => Number((value + (Math.random() - .48) * 32).toFixed(1))), 2200)
@@ -42,7 +63,7 @@ export default function App() {
   return <main>
     <nav>
       <a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a>
-      <div className="nav-links"><a href="#position">My position</a><a href="#how">How it works</a></div>
+      <div className="nav-links"><a href="#position">My position</a><a href="#monitor">AI monitor</a><a href="#how">How it works</a></div>
       <button className="wallet-button"><Icon name="wallet" /> Connect Strike</button>
     </nav>
 
@@ -76,6 +97,32 @@ export default function App() {
     <section className="alert">
       <div className="alert-icon"><Icon name="bolt" /></div><div><span className="overline">OSPAZ SIGNAL</span><h3>{protectedPlan ? 'Protection is active' : 'Your position needs attention'}</h3><p>{protectedPlan ? 'We’ll keep watching your position and tell you if the risk changes.' : 'Your margin ratio is approaching Strike’s warning zone. Choose a safety plan before your options narrow.'}</p></div>
       <button className="primary" onClick={() => setShowPlan(true)}>{protectedPlan ? 'Review protection' : 'See my options'} <Icon name="arrow" /></button>
+    </section>
+
+    <section className="monitor" id="monitor">
+      <div className="monitor-top"><div><span className="overline">OSPAZ AI MONITOR</span><h2>See what is working before you trust it.</h2><p>One plain-language analysis for your Strike bots, native vaults, and copy-trader candidates.</p></div><button className="primary" onClick={() => { setLastScan('Analysis refreshed just now'); setToast('Ospaz AI Monitor has refreshed its assessment.'); window.setTimeout(() => setToast(''), 4000) }}><Icon name="bolt" /> Run analysis</button></div>
+      <div className="monitor-shell">
+        <div className="monitor-tabs" role="tablist" aria-label="Ospaz monitor categories">
+          <button className={monitorTab === 'bots' ? 'selected' : ''} onClick={() => setMonitorTab('bots')} role="tab" aria-selected={monitorTab === 'bots'}>Bot health</button>
+          <button className={monitorTab === 'vaults' ? 'selected' : ''} onClick={() => setMonitorTab('vaults')} role="tab" aria-selected={monitorTab === 'vaults'}>Vault check</button>
+          <button className={monitorTab === 'traders' ? 'selected' : ''} onClick={() => setMonitorTab('traders')} role="tab" aria-selected={monitorTab === 'traders'}>Copy trader fit</button>
+          <span className="scan-time"><i></i>{lastScan}</span>
+        </div>
+        <div className="monitor-intro">
+          {monitorTab === 'bots' && <><span className="monitor-icon"><Icon name="bolt" /></span><div><h3>Bot health, without guessing</h3><p>Ospaz flags a bot only from recorded status, strategy progress, child-order activity, and clear errors.</p></div></>}
+          {monitorTab === 'vaults' && <><span className="monitor-icon"><Icon name="shield" /></span><div><h3>Vault eligibility, clearly defined</h3><p>“Operational” means the public record is active and has the required health signals. It is not an investment recommendation.</p></div></>}
+          {monitorTab === 'traders' && <><span className="monitor-icon"><Icon name="chart" /></span><div><h3>Copy with context</h3><p>Success rate means historical winning-trade percentage. Ospaz pairs it with drawdown and history length before recommending a fit.</p></div></>}
+        </div>
+        <div className="monitor-list">
+          {monitorData[monitorTab].map((item) => {
+            const bot = 'symbol' in item ? item : null
+            const scoredRecord = 'metric' in item ? item : null
+            const tone = item.status.includes('Working') || item.status.includes('Operational') || item.status.includes('Compatible') ? 'good' : item.status.includes('Review') || item.status.includes('High') ? 'caution' : 'bad'
+            return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{item.name}</strong>{bot && <span>{bot.symbol}</span>}</div><div className="row-analysis"><b className={tone}>{item.status}</b><small>{item.detail}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{bot.tag}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
+          })}
+        </div>
+        <div className="monitor-disclosure"><span>Demo data</span> Connect a Strike account to analyze your authenticated grid bots and TWAP strategies. Public vault and trader analytics should be refreshed from their documented Strike data sources before a real decision.</div>
+      </div>
     </section>
 
     <section className="how" id="how"><span className="overline">SIMPLE, NOT SIMPLISTIC</span><h2>Your position, translated into a plan.</h2><div className="steps"><div><span>01</span><Icon name="chart" /><h3>We watch the risk</h3><p>Live prices and your account health are read continuously.</p></div><div><span>02</span><Icon name="bolt" /><h3>We explain it plainly</h3><p>See what price movement means for your exact position.</p></div><div><span>03</span><Icon name="shield" /><h3>You stay in control</h3><p>Ospaz recommends protection. You review and approve every action.</p></div></div></section>

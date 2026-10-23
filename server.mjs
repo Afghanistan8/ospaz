@@ -55,6 +55,11 @@ async function strikeAuthenticatedGet(pathname) {
   return JSON.parse(payload)
 }
 
+async function verifyStrikeAccount(sessionAddress) {
+  const account = await strikeAuthenticatedGet('/v2/account')
+  if (String(account.blockchain_address || '').toLowerCase() !== sessionAddress.toLowerCase()) throw new Error('Connected wallet does not match the Strike account')
+}
+
 async function strikeGet(pathname, params = {}) {
   const url = new URL(pathname, strike)
   Object.entries(params).forEach(([key, value]) => url.searchParams.set(key, String(value)))
@@ -81,7 +86,7 @@ app.get('/api/strike/mark-price', async (request, response) => {
 })
 
 app.get('/api/strike/account', async (_request, response) => {
-  try { requireSession(_request); response.json(await strikeAuthenticatedGet('/v2/account')) }
+  try { const address = requireSession(_request); const account = await strikeAuthenticatedGet('/v2/account'); if (String(account.blockchain_address || '').toLowerCase() !== address.toLowerCase()) throw new Error('Connected wallet does not match the Strike account'); response.json(account) }
   catch (error) { response.status(error.message.includes('authentication') || error.message.includes('Wallet') ? 401 : 502).json({ error: error.message }) }
 })
 
@@ -89,7 +94,7 @@ app.get('/api/strike/positions', async (request, response) => {
   const symbol = request.query.symbol ? String(request.query.symbol).toUpperCase() : ''
   if (symbol && !allowedSymbols.has(symbol)) return response.status(400).json({ error: 'Unsupported symbol' })
   const pathname = symbol ? `/v2/positions?symbol=${encodeURIComponent(symbol)}` : '/v2/positions'
-  try { requireSession(request); response.json(await strikeAuthenticatedGet(pathname)) }
+  try { const address = requireSession(request); await verifyStrikeAccount(address); response.json(await strikeAuthenticatedGet(pathname)) }
   catch (error) { response.status(error.message.includes('authentication') || error.message.includes('Wallet') ? 401 : 502).json({ error: error.message }) }
 })
 

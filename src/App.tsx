@@ -1,27 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
+import { loadLeaders, loadMarkPrice, loadVaults, openMarkPriceStream, type Leader, type MarkPrice, type Vault } from './strike'
 
 type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 
-const monitorData = {
-  bots: [
-    { name: 'BTC neutral grid', symbol: 'BTC-USD', status: 'Needs attention', detail: 'No child-order fill recorded in the last 18 minutes.', tag: 'Check range' },
-    { name: 'ETH accumulation TWAP', symbol: 'ETH-USD', status: 'Working normally', detail: '12 of 16 slices have fired; strategy remains active.', tag: 'Active' },
-    { name: 'SOL momentum grid', symbol: 'SOL-USD', status: 'Stopped', detail: 'Strike reports this grid bot as stopped. No new orders can be placed.', tag: 'Stopped' },
-  ],
-  vaults: [
-    { name: 'Delta Harbor', status: 'Operational signals present', detail: 'Active · verified · positive equity · Sharpe data available', metric: '12.4% 30D return' },
-    { name: 'Northstar Macro', status: 'Review before depositing', detail: 'Active, but no verified badge in this demo record.', metric: '6.2% 30D return' },
-    { name: 'Orbit Yield', status: 'Not accepting new capital', detail: 'Vault status is paused. This is not an eligible deposit target.', metric: 'Paused' },
-  ],
-  traders: [
-    { name: 'LumenTrades', status: 'Compatible with your safety profile', detail: 'Historical win rate is stable and drawdown remains inside your selected limit.', metric: '68.4% win rate' },
-    { name: 'PerpPilot_09', status: 'High return, high risk', detail: 'Historical success rate is strong, but maximum drawdown exceeds your safety preference.', metric: '74.1% win rate' },
-    { name: 'Mercury Loop', status: 'Too little history', detail: 'Not enough completed-trade history to score responsibly.', metric: 'Insufficient data' },
-  ],
-} as const
+type MonitorItem = { name: string; status: string; detail: string; metric: string; symbol?: string; tag?: string }
 
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
@@ -36,27 +21,51 @@ function Icon({ name }: { name: string }) {
 }
 
 export default function App() {
-  const [price, setPrice] = useState(67_482.4)
+  const [markPrice, setMarkPrice] = useState<MarkPrice | null>(null)
+  const [vaults, setVaults] = useState<Vault[]>([])
+  const [leaders, setLeaders] = useState<Leader[]>([])
+  const [dataError, setDataError] = useState('')
   const [protectedPlan, setProtectedPlan] = useState<Plan | null>(null)
   const [showPlan, setShowPlan] = useState(false)
   const [toast, setToast] = useState('')
-  const [mode, setMode] = useState<'live' | 'demo'>('demo')
   const [monitorTab, setMonitorTab] = useState<MonitorTab>('bots')
-  const [lastScan, setLastScan] = useState('Ready to analyze')
+  const [lastScan, setLastScan] = useState('Connecting to Strike mainnet')
 
   useEffect(() => {
-    const timer = window.setInterval(() => setPrice((value) => Number((value + (Math.random() - .48) * 32).toFixed(1))), 2200)
-    return () => window.clearInterval(timer)
+    let alive = true
+    const load = async () => {
+      try {
+        const [nextVaults, nextLeaders, nextPrice] = await Promise.all([loadVaults(), loadLeaders(), loadMarkPrice()])
+        if (!alive) return
+        setVaults(nextVaults)
+        setLeaders(nextLeaders)
+        setMarkPrice(nextPrice)
+        setLastScan('Live public data loaded')
+      } catch (error) {
+        if (alive) setDataError(error instanceof Error ? error.message : 'Live data is unavailable')
+      }
+    }
+    void load()
+    const closeStream = openMarkPriceStream((nextPrice) => { if (alive) setMarkPrice(nextPrice) }, () => { if (alive) setDataError('Live price stream disconnected; retrying public data.') })
+    const refresh = window.setInterval(() => void load(), 60_000)
+    return () => { alive = false; closeStream(); window.clearInterval(refresh) }
   }, [])
+
+  const price = Number(markPrice?.p ?? 0)
+  const monitorData: Record<MonitorTab, MonitorItem[]> = useMemo(() => ({
+    bots: [{ name: 'Your Strike bots', status: 'Account connection required', detail: 'Grid and TWAP status are authenticated Strike data. Connect an API wallet before Ospaz can inspect bot health.', metric: 'Read-only access', tag: 'Connect' }],
+    vaults: vaults.slice(0, 3).map((vault) => ({ name: vault.name, status: vault.status === 'active' && vault.is_verified && Number(vault.equity) > 0 ? 'Operational signals present' : vault.status === 'active' ? 'Review before depositing' : 'Not accepting new capital', detail: `${vault.status} · ${vault.is_verified ? 'verified' : 'not verified'} · $${Number(vault.equity).toLocaleString()} equity · ${vault.sharpe_ratio ?? 'no'} Sharpe`, metric: `${Number(vault.period_return).toFixed(2)}% 30D return` })),
+    traders: leaders.filter((leader) => leader.total_trades >= 10).slice(0, 3).map((leader) => ({ name: leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8), status: Number(leader.max_drawdown_pct) <= 15 ? 'Historical profile available' : 'High drawdown — review risk', detail: `${leader.total_trades} trades · ${Number(leader.max_drawdown_pct).toFixed(2)}% max drawdown · ROI ${Number(leader.roi).toFixed(2)}%. Historical performance is not a guarantee.`, metric: `${Number(leader.win_rate_pct).toFixed(1)}% win rate` })),
+  }), [vaults, leaders])
 
   const risk = protectedPlan ? 58 : 82
   const liquidationPrice = protectedPlan === 'margin' ? 60_130 : protectedPlan === 'reduce' ? 61_740 : protectedPlan === 'stop' ? 62_880 : 62_010
-  const safety = useMemo(() => Math.max(0, ((price - liquidationPrice) / price) * 100), [price, liquidationPrice])
+  const safety = useMemo(() => price ? Math.max(0, ((price - liquidationPrice) / price) * 100) : 0, [price, liquidationPrice])
 
   const protect = (plan: Plan) => {
     setProtectedPlan(plan)
     setShowPlan(false)
-    setToast(plan === 'margin' ? 'Margin added. Your position has more room to breathe.' : plan === 'reduce' ? '25% of your position was marked for a reduce-only close.' : 'Protective stop set at $62,880.')
+    setToast(plan === 'margin' ? 'Protection plan previewed. No margin was transferred.' : plan === 'reduce' ? 'Protection plan previewed. No order was submitted.' : 'Protection plan previewed. No stop order was submitted.')
     window.setTimeout(() => setToast(''), 5000)
   }
 
@@ -64,7 +73,7 @@ export default function App() {
     <nav>
       <a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a>
       <div className="nav-links"><a href="#position">My position</a><a href="#monitor">AI monitor</a><a href="#how">How it works</a></div>
-      <button className="wallet-button"><Icon name="wallet" /> Connect Strike</button>
+      <button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read-only.')}><Icon name="wallet" /> Connect Strike</button>
     </nav>
 
     <section className="hero" id="top">
@@ -72,15 +81,15 @@ export default function App() {
       <h1>Trade with conviction.<br /><em>Not fear.</em></h1>
       <p>Ospaz turns complex liquidation risk into a clear plan—so you can protect your position before the market decides for you.</p>
       <div className="hero-actions"><button className="primary" onClick={() => setShowPlan(true)}>Protect my position <Icon name="arrow" /></button><button className="text-button" onClick={() => document.querySelector('#how')?.scrollIntoView({ behavior: 'smooth' })}>See how it works</button></div>
-      <div className="live-pill"><i></i> {mode === 'demo' ? 'Demo mode · simulated Strike account' : 'Live account connected'} <button onClick={() => setMode(mode === 'demo' ? 'live' : 'demo')}>Switch</button></div>
+      <div className="live-pill"><i></i> {markPrice ? `Live Strike BTC mark price · ${markPrice.s}` : 'Connecting to Strike mainnet'} {dataError && <button onClick={() => setToast(dataError)}>Details</button>}</div>
     </section>
 
     <section className="dashboard" id="position">
-      <div className="section-head"><div><span className="overline">ACTIVE POSITION</span><h2>BTC-USD <b>Long</b></h2></div><div className="price"><span>Mark price</span><strong>{usd.format(price)}</strong><small>+1.84% today</small></div></div>
+      <div className="section-head"><div><span className="overline">DEMO POSITION · LIVE MARKET PRICE</span><h2>BTC-USD <b>Long</b></h2></div><div className="price"><span>Strike mark price</span><strong>{markPrice ? usd.format(price) : 'Loading…'}</strong><small>{markPrice ? `Index ${usd.format(Number(markPrice.i))}` : 'Waiting for price stream'}</small></div></div>
       <div className="grid">
         <article className="risk-card">
           <div className="card-label"><span>Liquidation risk</span><button className="info">i</button></div>
-          <div className="risk-content"><div className="gauge" style={{ '--risk': `${risk * 3.6}deg` } as React.CSSProperties}><div className="gauge-inner"><strong>{risk}%</strong><span>{protectedPlan ? 'Protected' : 'Elevated'}</span></div></div><div className="risk-copy"><h3>{protectedPlan ? 'You are in a safer zone.' : 'You are getting too close.'}</h3><p>{protectedPlan ? 'Your protective action has increased your distance from liquidation.' : 'A 8.1% BTC drop could liquidate this position. Take action while you still have options.'}</p></div></div>
+          <div className="risk-content"><div className="gauge" style={{ '--risk': `${risk * 3.6}deg` } as React.CSSProperties}><div className="gauge-inner"><strong>{risk}%</strong><span>{protectedPlan ? 'Previewed' : 'Elevated'}</span></div></div><div className="risk-copy"><h3>{protectedPlan ? 'Your plan is ready for review.' : 'You are getting too close.'}</h3><p>{protectedPlan ? 'This is a demo position. Ospaz has not submitted any trading or margin instruction.' : 'This demo position uses the live Strike mark price; connect an authenticated account before relying on personal risk data.'}</p></div></div>
           <div className="risk-scale"><span>Safe</span><span>Watch</span><span>Danger</span></div>
         </article>
         <article className="metrics-card">
@@ -100,7 +109,7 @@ export default function App() {
     </section>
 
     <section className="monitor" id="monitor">
-      <div className="monitor-top"><div><span className="overline">OSPAZ AI MONITOR</span><h2>See what is working before you trust it.</h2><p>One plain-language analysis for your Strike bots, native vaults, and copy-trader candidates.</p></div><button className="primary" onClick={() => { setLastScan('Analysis refreshed just now'); setToast('Ospaz AI Monitor has refreshed its assessment.'); window.setTimeout(() => setToast(''), 4000) }}><Icon name="bolt" /> Run analysis</button></div>
+      <div className="monitor-top"><div><span className="overline">OSPAZ AI MONITOR</span><h2>See what is working before you trust it.</h2><p>One plain-language analysis for your Strike bots, native vaults, and copy-trader candidates.</p></div><button className="primary" onClick={() => { setLastScan('Refreshing live public data'); void Promise.all([loadVaults(), loadLeaders()]).then(([nextVaults, nextLeaders]) => { setVaults(nextVaults); setLeaders(nextLeaders); setLastScan('Live public data refreshed') }).catch(() => setDataError('Could not refresh live public data.')) }}><Icon name="bolt" /> Run analysis</button></div>
       <div className="monitor-shell">
         <div className="monitor-tabs" role="tablist" aria-label="Ospaz monitor categories">
           <button className={monitorTab === 'bots' ? 'selected' : ''} onClick={() => setMonitorTab('bots')} role="tab" aria-selected={monitorTab === 'bots'}>Bot health</button>
@@ -115,13 +124,13 @@ export default function App() {
         </div>
         <div className="monitor-list">
           {monitorData[monitorTab].map((item) => {
-            const bot = 'symbol' in item ? item : null
-            const scoredRecord = 'metric' in item ? item : null
+            const bot = item.symbol ? item : null
+            const scoredRecord = item.metric ? item : null
             const tone = item.status.includes('Working') || item.status.includes('Operational') || item.status.includes('Compatible') ? 'good' : item.status.includes('Review') || item.status.includes('High') ? 'caution' : 'bad'
             return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{item.name}</strong>{bot && <span>{bot.symbol}</span>}</div><div className="row-analysis"><b className={tone}>{item.status}</b><small>{item.detail}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{bot.tag}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
           })}
         </div>
-        <div className="monitor-disclosure"><span>Demo data</span> Connect a Strike account to analyze your authenticated grid bots and TWAP strategies. Public vault and trader analytics should be refreshed from their documented Strike data sources before a real decision.</div>
+        <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Bot analysis requires your authenticated read-only API wallet; Ospaz will never request a private key or place an order during monitoring.</div>
       </div>
     </section>
 

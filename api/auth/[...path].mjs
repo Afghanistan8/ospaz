@@ -1,8 +1,9 @@
 import { createChallenge, verifyChallenge } from '../../lib/auth.mjs'
 
 export default async function handler(request, response) {
-  const segments = Array.isArray(request.query.path) ? request.query.path : [request.query.path]
-  const pathname = `/${segments.filter(Boolean).join('/')}`
+  const requestPath = new URL(request.url, 'https://ospaz.local').pathname
+  const querySegments = Array.isArray(request.query.path) ? request.query.path : [request.query.path]
+  const pathname = requestPath.startsWith('/api/auth/') ? requestPath.slice('/api/auth'.length) : `/${querySegments.filter(Boolean).join('/')}`
   if (request.method !== 'POST') return response.status(405).json({ error: 'Method not allowed' })
   if (pathname === '/nonce') {
     try {

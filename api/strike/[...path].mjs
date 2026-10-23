@@ -21,8 +21,9 @@ function signedHeaders(pathname) {
 }
 
 export default async function handler(request, response) {
-  const segments = Array.isArray(request.query.path) ? request.query.path : [request.query.path]
-  const pathname = `/${segments.filter(Boolean).join('/')}`
+  const requestPath = new URL(request.url, 'https://ospaz.local').pathname
+  const querySegments = Array.isArray(request.query.path) ? request.query.path : [request.query.path]
+  const pathname = requestPath.startsWith('/api/strike/') ? requestPath.slice('/api/strike'.length) : `/${querySegments.filter(Boolean).join('/')}`
   if (pathname === '/auth/nonce' && request.method === 'POST') {
     try { const challenge = createChallenge(request.body?.address, request); response.setHeader('Set-Cookie', challenge.cookie); return response.status(200).json({ message: challenge.message }) }
     catch (error) { return response.status(400).json({ error: error.message }) }

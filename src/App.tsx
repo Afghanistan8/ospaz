@@ -11,6 +11,28 @@ const displaySymbol = (value: string) => value.replace('-', ' / ')
 
 type MonitorItem = { name: string; status: string; detail: string; metric: string; symbol?: string; tag?: string }
 
+const percentWidth = (value: number, max = 100) => `${Math.max(0, Math.min(100, (value / max) * 100))}%`
+
+function SignalBar({ label, value, width, tone = '' }: { label: string; value: string; width: string; tone?: string }) {
+  return <div className="signal-bar"><div><span>{label}</span><strong>{value}</strong></div><i className={tone} style={{ width }} /></div>
+}
+
+function VaultCard({ vault, maxEquity }: { vault: Vault; maxEquity: number }) {
+  const active = vault.status === 'active'
+  const verified = vault.is_verified
+  const equity = Number(vault.equity) || 0
+  const returnValue = Number(vault.period_return) || 0
+  return <article className="data-card vault-card"><div className="data-card-head"><div><span className="card-index">VAULT</span><h4>{displayText(vault.name)}</h4></div><span className={`data-chip ${active && verified ? 'good' : 'caution'}`}>{active && verified ? 'Verified' : verified ? 'Review activity' : 'Unverified'}</span></div><div className="data-card-grid"><div className="data-fact"><span>Activity</span><strong className={active ? 'good-text' : 'muted-text'}>{active ? 'Active' : displayText(vault.status)}</strong></div><div className="data-fact"><span>30D return</span><strong>{returnValue.toFixed(2)}%</strong></div></div><SignalBar label="Equity" value={usd.format(equity)} width={percentWidth(equity, maxEquity)} /><SignalBar label="Return strength" value={`${returnValue.toFixed(2)}%`} width={percentWidth(Math.max(0, returnValue), 30)} tone={returnValue >= 0 ? 'positive-bar' : 'negative-bar'} /><div className="data-card-foot"><span>{vault.depositors} depositors</span><span>{vault.sharpe_ratio ? `Sharpe ${vault.sharpe_ratio}` : 'Sharpe unavailable'}</span></div></article>
+}
+
+function TraderCard({ leader, selected, onChoose }: { leader: Leader; selected: boolean; onChoose: () => void }) {
+  const name = displayText(leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8))
+  const winRate = Number(leader.win_rate_pct) || 0
+  const drawdown = Number(leader.max_drawdown_pct) || 0
+  const roi = Number(leader.roi) || 0
+  return <article className={`data-card trader-card ${selected ? 'selected-card' : ''}`}><div className="data-card-head"><div><span className="card-index">TRADER</span><h4>{name}</h4></div><strong className="headline-metric">{winRate.toFixed(1)}%<small>win rate</small></strong></div><div className="trader-chart"><div className="chart-column"><i style={{ height: percentWidth(winRate) }} /><span>Wins</span></div><div className="chart-column risk"><i style={{ height: percentWidth(drawdown, 50) }} /><span>Risk</span></div><div className="chart-column return"><i style={{ height: percentWidth(Math.max(0, roi), 100) }} /><span>ROI</span></div></div><div className="trader-facts"><span>{leader.total_trades} trades</span><span>{drawdown.toFixed(1)}% drawdown</span><span>{roi.toFixed(1)}% ROI</span></div><button className={`choose-trader ${selected ? 'chosen' : ''}`} onClick={onChoose}>{selected ? 'Selected for copy' : 'Choose trader'} <Icon name="arrow" /></button></article>
+}
+
 function Icon({ name }: { name: string }) {
   const paths: Record<string, string> = {
     shield: 'M12 3 4.8 6v5.6c0 4.2 3.1 7.6 7.2 9.4 4.1-1.8 7.2-5.2 7.2-9.4V6L12 3Zm0 4.2 3.6 1.5v3c0 2.5-1.5 4.7-3.6 5.9-2.1-1.2-3.6-3.4-3.6-5.9v-3L12 7.2Z',
@@ -185,19 +207,14 @@ export default function App() {
           {monitorTab === 'vaults' && <><span className="monitor-icon"><Icon name="shield" /></span><div><h3>Vault eligibility, clearly defined</h3><p>“Operational” means the public record is active and has the required health signals. It is not an investment recommendation.</p></div></>}
           {monitorTab === 'traders' && <><span className="monitor-icon"><Icon name="chart" /></span><div><h3>Copy with context</h3><p>Success rate means historical winning-trade percentage. Ospaz pairs it with drawdown and history length before recommending a fit.</p></div></>}
         </div>
-        <div className="monitor-list">
-          {monitorData[monitorTab].map((item) => {
-            const bot = item.symbol ? item : null
-            const scoredRecord = item.metric ? item : null
-            const tone = item.status.includes('Working') || item.status.includes('Operational') || item.status.includes('Compatible') ? 'good' : item.status.includes('Review') || item.status.includes('High') ? 'caution' : 'bad'
-            return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{displayText(item.name)}</strong>{bot && <span>{displaySymbol(bot.symbol!)}</span>}</div><div className="row-analysis"><b className={tone}>{displayText(item.status)}</b><small>{displayText(item.detail)}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{displayText(bot.tag!)}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
-          })}
-        </div>
+        {monitorTab === 'bots' && <div className="monitor-list">{monitorData.bots.map((item) => <article className="monitor-row" key={item.name}><div className="row-title"><strong>{displayText(item.name)}</strong></div><div className="row-analysis"><b className={account ? 'good' : 'bad'}>{displayText(item.status)}</b><small>{displayText(item.detail)}</small></div><div className="row-metric"><span className={account ? 'status-active' : 'status-stopped'}>{displayText(item.tag!)}</span></div></article>)}</div>}
+        {monitorTab === 'vaults' && <div className="data-card-grid-list">{vaults.length ? vaults.slice(0, 6).map((vault) => <VaultCard key={vault.vault_id} vault={vault} maxEquity={Math.max(...vaults.map((entry) => Number(entry.equity) || 0), 1)} />) : <div className="empty-state">Waiting for live vault data.</div>}</div>}
+        {monitorTab === 'traders' && <div className="data-card-grid-list">{leaders.filter((leader) => leader.total_trades >= 10).slice(0, 6).map((leader) => <TraderCard key={leader.account_id} leader={leader} selected={selectedTrader === leader.account_id} onChoose={() => { setSelectedTrader(leader.account_id); setCopyState('') }} />)}</div>}
         <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Account and position data use your authenticated read only API wallet. Ospaz will not place an order during monitoring.</div>
       </div>
       <div className="copy-panel">
         <div><span className="overline">COPY TRADING</span><h3>Test a trader without sending an order.</h3><p>Select a public trader, choose the percentage of your available balance to allocate, and create a paper copy. Real execution stays disabled.</p></div>
-        <div className="copy-controls"><label>Trader<select value={selectedTrader} onChange={(event) => setSelectedTrader(event.target.value)}><option value="">Choose a trader</option>{leaders.filter((leader) => leader.total_trades >= 10).map((leader) => <option key={leader.account_id} value={leader.account_id}>{displayText(leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8))} · {Number(leader.win_rate_pct).toFixed(1)}% wins</option>)}</select></label><label>Allocation %<input inputMode="decimal" value={copyAllocation} onChange={(event) => setCopyAllocation(event.target.value)} /></label><button className="primary" onClick={simulateCopy}>Simulate copy <Icon name="arrow" /></button></div>
+        <div className="copy-controls"><div className={`copy-target ${copyCandidate ? '' : 'empty'}`}><span>Selected trader</span><strong>{copyCandidate ? displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8)) : 'Choose one above'}</strong></div><label>Allocation %<input inputMode="decimal" value={copyAllocation} onChange={(event) => setCopyAllocation(event.target.value)} /></label><button className="primary" onClick={simulateCopy}>Simulate copy <Icon name="arrow" /></button></div>
         {copyCandidate && <div className="copy-summary"><strong>{displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}</strong><span>{copyCandidate.total_trades} trades</span><span>{Number(copyCandidate.win_rate_pct).toFixed(1)}% win rate</span><span>{Number(copyCandidate.max_drawdown_pct).toFixed(1)}% max drawdown</span></div>}
         {copyState && <p className="copy-state">{copyState}</p>}
       </div>

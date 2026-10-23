@@ -10,6 +10,7 @@ Ospaz translates difficult liquidation and margin data into clear, user-controll
 2. **Check public records.** The monitor reads Strike public vault and trader statistics. It uses vault status, verification, equity, returns, win rate, trade count, and drawdown to give concise context.
 3. **Keep your account private.** Personal positions, Grid bots, and TWAP strategies are not read until you explicitly connect a dedicated Strike API wallet. Ospaz must never request your private key.
 4. **Preview protection.** The current protection choices are previews. They change the on screen demo only and cannot submit a trade, transfer margin, or create a stop order.
+5. **Paper copy trading.** Choose a public trader, enter an allocation percentage, and simulate the allocation against your authenticated available balance. Ospaz creates a local paper receipt only; it never sends an order, margin transfer, or wallet transaction.
 
 ## Test it yourself in PowerShell
 
@@ -49,7 +50,11 @@ Ospaz translates difficult liquidation and margin data into clear, user-controll
 
 10. Test the protection flow. Select **Protect my position**, choose any option, and confirm that the toast says it is a preview. No order, margin transfer, or wallet transaction should occur.
 
-11. Stop the local server when you are done by selecting the PowerShell window and pressing `Ctrl + C`.
+11. Test the paper copy flow. Open **Copy trader fit**, choose a trader, enter a percentage from 1 to 100, and select **Simulate copy**. Confirm that the paper receipt shows the simulated allocation and says no Strike order was sent. Select **Clear paper copy** and confirm the receipt disappears locally.
+
+12. Try invalid paper-copy inputs: no trader selected, `0`, `101`, or text. Ospaz must show a validation message and create no receipt.
+
+13. Stop the local server when you are done by selecting the PowerShell window and pressing `Ctrl + C`.
 
 The local bridge only permits the public endpoints Ospaz uses. It does not hold an API private key and it cannot submit an order.
 

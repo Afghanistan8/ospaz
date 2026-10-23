@@ -4,6 +4,7 @@ import { authenticateWallet, connectWallet, discoverWallets, type WalletOption }
 
 type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
+type PaperCopy = { id: string; trader: string; allocationPct: number; amount: number; createdAt: string; status: 'simulated' }
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
 const displayText = (value: string) => value.replace(/[\-–—]/g, ' ')
@@ -62,6 +63,7 @@ export default function App() {
   const [selectedTrader, setSelectedTrader] = useState('')
   const [copyAllocation, setCopyAllocation] = useState('25')
   const [copyState, setCopyState] = useState('')
+  const [paperCopy, setPaperCopy] = useState<PaperCopy | null>(null)
   const [walletOptions, setWalletOptions] = useState<WalletOption[]>([])
   const [showWalletPicker, setShowWalletPicker] = useState(false)
   const [walletAddress, setWalletAddress] = useState('')
@@ -129,10 +131,18 @@ export default function App() {
 
   const copyCandidate = leaders.find((leader) => leader.account_id === selectedTrader)
   const simulateCopy = () => {
+    setCopyState('')
+    setPaperCopy(null)
     if (!copyCandidate) return setCopyState('Choose a trader first.')
+    if (!account) return setCopyState('Connect your Strike account first so Ospaz can calculate the paper allocation from your available balance.')
     const allocation = Number(copyAllocation)
     if (!Number.isFinite(allocation) || allocation <= 0 || allocation > 100) return setCopyState('Enter an allocation between 1 and 100 percent.')
-    setCopyState(`Paper copy ready for ${displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}. No order was sent to Strike.`)
+    const available = Number(account.available_balance)
+    if (!Number.isFinite(available) || available < 0) return setCopyState('Available balance is unavailable. Refresh your authenticated Strike account data and try again.')
+    const trader = displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))
+    const nextCopy: PaperCopy = { id: `PAPER-${Date.now().toString(36).toUpperCase()}`, trader, allocationPct: allocation, amount: available * allocation / 100, createdAt: new Date().toISOString(), status: 'simulated' }
+    setPaperCopy(nextCopy)
+    setCopyState(`Paper copy simulated for ${trader}. No order, margin transfer, or wallet transaction was sent to Strike.`)
   }
 
   const openWalletPicker = () => {
@@ -218,6 +228,7 @@ export default function App() {
         <div className="copy-controls"><div className={`copy-target ${copyCandidate ? '' : 'empty'}`}><span>Selected trader</span><strong>{copyCandidate ? displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8)) : 'Choose one above'}</strong></div><label>Allocation %<input inputMode="decimal" value={copyAllocation} onChange={(event) => setCopyAllocation(event.target.value)} /></label><button className="primary" onClick={simulateCopy}>Simulate copy <Icon name="arrow" /></button></div>
         {copyCandidate && <div className="copy-summary"><strong>{displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}</strong><span>{copyCandidate.total_trades} trades</span><span>{Number(copyCandidate.win_rate_pct).toFixed(1)}% win rate</span><span>{Number(copyCandidate.max_drawdown_pct).toFixed(1)}% max drawdown</span></div>}
         {copyState && <p className="copy-state">{copyState}</p>}
+        {paperCopy && <div className="paper-receipt" aria-live="polite"><div><span>Paper receipt</span><strong>{paperCopy.id}</strong></div><div><span>Simulated allocation</span><strong>{usd.format(paperCopy.amount)} ({paperCopy.allocationPct}%)</strong></div><div><span>Execution status</span><strong className="good-text">Simulated only</strong></div><button className="text-button" onClick={() => { setPaperCopy(null); setCopyState('Paper copy cleared locally. No Strike state changed.') }}>Clear paper copy</button></div>}
       </div>
     </section>
 

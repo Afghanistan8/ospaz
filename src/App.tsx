@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadAccount, loadLeaders, loadMarkPrice, loadPositions, loadVaults, openMarkPriceStream, type Leader, type MarkPrice, type StrikeAccount, type StrikePosition, type Vault } from './strike'
-import { connectWallet, discoverWallets, type WalletOption } from './wallet'
+import { authenticateWallet, connectWallet, discoverWallets, type WalletOption } from './wallet'
 
 type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
@@ -143,6 +143,7 @@ export default function App() {
   const chooseWallet = async (wallet: WalletOption) => {
     try {
       const address = await connectWallet(wallet.provider)
+      await authenticateWallet(wallet.provider, address)
       setWalletAddress(address)
       setWalletName(wallet.name)
       setShowWalletPicker(false)

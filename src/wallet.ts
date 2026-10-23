@@ -44,3 +44,13 @@ export async function connectWallet(provider: Eip1193Provider): Promise<string> 
   if (!address) throw new Error('The wallet returned no account')
   return address
 }
+
+export async function authenticateWallet(provider: Eip1193Provider, address: string): Promise<void> {
+  const challengeResponse = await fetch('/api/auth/nonce', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address }) })
+  const challenge = await challengeResponse.json() as { message?: string; error?: string }
+  if (!challengeResponse.ok || !challenge.message) throw new Error(challenge.error || 'Could not start wallet login')
+  const signature = await provider.request({ method: 'personal_sign', params: [challenge.message, address] }) as string
+  const verifyResponse = await fetch('/api/auth/verify', { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ address, message: challenge.message, signature }) })
+  const result = await verifyResponse.json() as { error?: string }
+  if (!verifyResponse.ok) throw new Error(result.error || 'Wallet signature could not be verified')
+}

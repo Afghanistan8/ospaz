@@ -3,8 +3,10 @@ import crypto from 'node:crypto'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createChallenge, requireSession, verifyChallenge } from './lib/auth.mjs'
 
 const app = express()
+app.use(express.json({ limit: '20kb' }))
 const root = path.dirname(fileURLToPath(import.meta.url))
 const strike = 'https://api.strikefinance.org'
 const allowedSymbols = new Set(['BTC-USD', 'ETH-USD', 'SOL-USD', 'ADA-USD'])
@@ -79,16 +81,32 @@ app.get('/api/strike/mark-price', async (request, response) => {
 })
 
 app.get('/api/strike/account', async (_request, response) => {
-  try { response.json(await strikeAuthenticatedGet('/v2/account')) }
-  catch (error) { response.status(502).json({ error: error.message }) }
+  try { requireSession(_request); response.json(await strikeAuthenticatedGet('/v2/account')) }
+  catch (error) { response.status(error.message.includes('authentication') || error.message.includes('Wallet') ? 401 : 502).json({ error: error.message }) }
 })
 
 app.get('/api/strike/positions', async (request, response) => {
   const symbol = request.query.symbol ? String(request.query.symbol).toUpperCase() : ''
   if (symbol && !allowedSymbols.has(symbol)) return response.status(400).json({ error: 'Unsupported symbol' })
   const pathname = symbol ? `/v2/positions?symbol=${encodeURIComponent(symbol)}` : '/v2/positions'
-  try { response.json(await strikeAuthenticatedGet(pathname)) }
-  catch (error) { response.status(502).json({ error: error.message }) }
+  try { requireSession(request); response.json(await strikeAuthenticatedGet(pathname)) }
+  catch (error) { response.status(error.message.includes('authentication') || error.message.includes('Wallet') ? 401 : 502).json({ error: error.message }) }
+})
+
+app.post('/api/auth/nonce', (request, response) => {
+  try {
+    const challenge = createChallenge(request.body?.address, request)
+    response.setHeader('Set-Cookie', challenge.cookie)
+    response.json({ message: challenge.message })
+  } catch (error) { response.status(400).json({ error: error.message }) }
+})
+
+app.post('/api/auth/verify', (request, response) => {
+  try {
+    const session = verifyChallenge(request, request.body?.address, request.body?.message, request.body?.signature)
+    response.setHeader('Set-Cookie', session.cookie)
+    response.json({ address: session.address })
+  } catch (error) { response.status(401).json({ error: error.message }) }
 })
 
 app.use(express.static(path.join(root, 'dist')))

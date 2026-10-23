@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { loadLeaders, loadMarkPrice, loadVaults, openMarkPriceStream, type Leader, type MarkPrice, type Vault } from './strike'
+import { loadAccount, loadLeaders, loadMarkPrice, loadPositions, loadVaults, openMarkPriceStream, type Leader, type MarkPrice, type StrikeAccount, type StrikePosition, type Vault } from './strike'
 
 type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
@@ -33,6 +33,12 @@ export default function App() {
   const [toast, setToast] = useState('')
   const [monitorTab, setMonitorTab] = useState<MonitorTab>('bots')
   const [lastScan, setLastScan] = useState('Connecting to Strike mainnet')
+  const [account, setAccount] = useState<StrikeAccount | null>(null)
+  const [positions, setPositions] = useState<StrikePosition[]>([])
+  const [accountError, setAccountError] = useState('')
+  const [selectedTrader, setSelectedTrader] = useState('')
+  const [copyAllocation, setCopyAllocation] = useState('25')
+  const [copyState, setCopyState] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -55,15 +61,33 @@ export default function App() {
   }, [])
 
   useEffect(() => {
+    let alive = true
+    const loadPrivateData = async () => {
+      try {
+        const [nextAccount, nextPositions] = await Promise.all([loadAccount(), loadPositions()])
+        if (!alive) return
+        setAccount(nextAccount)
+        setPositions(nextPositions.positions)
+        setAccountError('')
+      } catch (error) {
+        if (alive) setAccountError(error instanceof Error ? error.message : 'Authenticated Strike data is unavailable')
+      }
+    }
+    void loadPrivateData()
+    const refresh = window.setInterval(() => void loadPrivateData(), 30_000)
+    return () => { alive = false; window.clearInterval(refresh) }
+  }, [])
+
+  useEffect(() => {
     localStorage.setItem('ospaz-theme', theme)
   }, [theme])
 
   const price = Number(markPrice?.p ?? 0)
   const monitorData: Record<MonitorTab, MonitorItem[]> = useMemo(() => ({
-    bots: [{ name: 'Your Strike bots', status: 'Account connection required', detail: 'Grid and TWAP status are authenticated Strike data. Connect an API wallet before Ospaz can inspect bot health.', metric: 'Read only access', tag: 'Connect' }],
+    bots: [{ name: 'Your Strike account', status: account ? 'Connected and readable' : 'Account connection required', detail: account ? `${positions.length} open position${positions.length === 1 ? '' : 's'} detected. Ospaz is using read only access.` : accountError || 'Add a valid Strike API wallet to inspect your account and bot health.', metric: account ? `${account.blockchain} mainnet` : 'Read only access', tag: account ? 'Active' : 'Connect' }],
     vaults: vaults.slice(0, 3).map((vault) => ({ name: vault.name, status: vault.status === 'active' && vault.is_verified && Number(vault.equity) > 0 ? 'Operational signals present' : vault.status === 'active' ? 'Review before depositing' : 'Not accepting new capital', detail: `${vault.status} · ${vault.is_verified ? 'verified' : 'not verified'} · $${Number(vault.equity).toLocaleString()} equity · ${vault.sharpe_ratio ?? 'no'} Sharpe`, metric: `${Number(vault.period_return).toFixed(2)}% 30D return` })),
     traders: leaders.filter((leader) => leader.total_trades >= 10).slice(0, 3).map((leader) => ({ name: displayText(leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8)), status: Number(leader.max_drawdown_pct) <= 15 ? 'Historical profile available' : 'High drawdown. Review risk.', detail: `${leader.total_trades} trades. ${Number(leader.max_drawdown_pct).toFixed(2)}% maximum drawdown. ROI ${Number(leader.roi).toFixed(2)}%. Historical performance is not a guarantee.`, metric: `${Number(leader.win_rate_pct).toFixed(1)}% win rate` })),
-  }), [vaults, leaders])
+  }), [vaults, leaders, account, positions.length, accountError])
 
   const risk = protectedPlan ? 58 : 82
   const liquidationPrice = protectedPlan === 'margin' ? 60_130 : protectedPlan === 'reduce' ? 61_740 : protectedPlan === 'stop' ? 62_880 : 62_010
@@ -74,6 +98,14 @@ export default function App() {
     setShowPlan(false)
     setToast(plan === 'margin' ? 'Protection plan previewed. No margin was transferred.' : plan === 'reduce' ? 'Protection plan previewed. No order was submitted.' : 'Protection plan previewed. No stop order was submitted.')
     window.setTimeout(() => setToast(''), 5000)
+  }
+
+  const copyCandidate = leaders.find((leader) => leader.account_id === selectedTrader)
+  const simulateCopy = () => {
+    if (!copyCandidate) return setCopyState('Choose a trader first.')
+    const allocation = Number(copyAllocation)
+    if (!Number.isFinite(allocation) || allocation <= 0 || allocation > 100) return setCopyState('Enter an allocation between 1 and 100 percent.')
+    setCopyState(`Paper copy ready for ${displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}. No order was sent to Strike.`)
   }
 
   return <main className={theme === 'dark' ? 'theme-dark' : ''}>
@@ -137,7 +169,13 @@ export default function App() {
             return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{displayText(item.name)}</strong>{bot && <span>{displaySymbol(bot.symbol!)}</span>}</div><div className="row-analysis"><b className={tone}>{displayText(item.status)}</b><small>{displayText(item.detail)}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{displayText(bot.tag!)}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
           })}
         </div>
-        <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Bot analysis requires your authenticated read only API wallet; Ospaz will never request a private key or place an order during monitoring.</div>
+        <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Account and position data use your authenticated read only API wallet. Ospaz will not place an order during monitoring.</div>
+      </div>
+      <div className="copy-panel">
+        <div><span className="overline">COPY TRADING</span><h3>Test a trader without sending an order.</h3><p>Select a public trader, choose the percentage of your available balance to allocate, and create a paper copy. Real execution stays disabled.</p></div>
+        <div className="copy-controls"><label>Trader<select value={selectedTrader} onChange={(event) => setSelectedTrader(event.target.value)}><option value="">Choose a trader</option>{leaders.filter((leader) => leader.total_trades >= 10).map((leader) => <option key={leader.account_id} value={leader.account_id}>{displayText(leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8))} · {Number(leader.win_rate_pct).toFixed(1)}% wins</option>)}</select></label><label>Allocation %<input inputMode="decimal" value={copyAllocation} onChange={(event) => setCopyAllocation(event.target.value)} /></label><button className="primary" onClick={simulateCopy}>Simulate copy <Icon name="arrow" /></button></div>
+        {copyCandidate && <div className="copy-summary"><strong>{displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}</strong><span>{copyCandidate.total_trades} trades</span><span>{Number(copyCandidate.win_rate_pct).toFixed(1)}% win rate</span><span>{Number(copyCandidate.max_drawdown_pct).toFixed(1)}% max drawdown</span></div>}
+        {copyState && <p className="copy-state">{copyState}</p>}
       </div>
     </section>
 

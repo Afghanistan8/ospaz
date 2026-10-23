@@ -5,6 +5,8 @@ type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
 
 const usd = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' })
+const displayText = (value: string) => value.replace(/[\-–—]/g, ' ')
+const displaySymbol = (value: string) => value.replace('-', ' / ')
 
 type MonitorItem = { name: string; status: string; detail: string; metric: string; symbol?: string; tag?: string }
 
@@ -53,9 +55,9 @@ export default function App() {
 
   const price = Number(markPrice?.p ?? 0)
   const monitorData: Record<MonitorTab, MonitorItem[]> = useMemo(() => ({
-    bots: [{ name: 'Your Strike bots', status: 'Account connection required', detail: 'Grid and TWAP status are authenticated Strike data. Connect an API wallet before Ospaz can inspect bot health.', metric: 'Read-only access', tag: 'Connect' }],
+    bots: [{ name: 'Your Strike bots', status: 'Account connection required', detail: 'Grid and TWAP status are authenticated Strike data. Connect an API wallet before Ospaz can inspect bot health.', metric: 'Read only access', tag: 'Connect' }],
     vaults: vaults.slice(0, 3).map((vault) => ({ name: vault.name, status: vault.status === 'active' && vault.is_verified && Number(vault.equity) > 0 ? 'Operational signals present' : vault.status === 'active' ? 'Review before depositing' : 'Not accepting new capital', detail: `${vault.status} · ${vault.is_verified ? 'verified' : 'not verified'} · $${Number(vault.equity).toLocaleString()} equity · ${vault.sharpe_ratio ?? 'no'} Sharpe`, metric: `${Number(vault.period_return).toFixed(2)}% 30D return` })),
-    traders: leaders.filter((leader) => leader.total_trades >= 10).slice(0, 3).map((leader) => ({ name: leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8), status: Number(leader.max_drawdown_pct) <= 15 ? 'Historical profile available' : 'High drawdown — review risk', detail: `${leader.total_trades} trades · ${Number(leader.max_drawdown_pct).toFixed(2)}% max drawdown · ROI ${Number(leader.roi).toFixed(2)}%. Historical performance is not a guarantee.`, metric: `${Number(leader.win_rate_pct).toFixed(1)}% win rate` })),
+    traders: leaders.filter((leader) => leader.total_trades >= 10).slice(0, 3).map((leader) => ({ name: displayText(leader.nickname || leader.ada_handle || leader.account_id.slice(0, 8)), status: Number(leader.max_drawdown_pct) <= 15 ? 'Historical profile available' : 'High drawdown. Review risk.', detail: `${leader.total_trades} trades. ${Number(leader.max_drawdown_pct).toFixed(2)}% maximum drawdown. ROI ${Number(leader.roi).toFixed(2)}%. Historical performance is not a guarantee.`, metric: `${Number(leader.win_rate_pct).toFixed(1)}% win rate` })),
   }), [vaults, leaders])
 
   const risk = protectedPlan ? 58 : 82
@@ -73,19 +75,19 @@ export default function App() {
     <nav>
       <a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a>
       <div className="nav-links"><a href="#position">My position</a><a href="#monitor">AI monitor</a><a href="#how">How it works</a></div>
-      <button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read-only.')}><Icon name="wallet" /> Connect Strike</button>
+      <button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read only.')}><Icon name="wallet" /> Connect Strike</button>
     </nav>
 
     <section className="hero" id="top">
       <div className="eyebrow"><span></span> Your safety layer for perpetuals</div>
       <h1>Trade with conviction.<br /><em>Not fear.</em></h1>
-      <p>Ospaz turns complex liquidation risk into a clear plan—so you can protect your position before the market decides for you.</p>
+      <p>Ospaz turns complex liquidation risk into a clear plan. Protect your position before the market decides for you.</p>
       <div className="hero-actions"><button className="primary" onClick={() => setShowPlan(true)}>Protect my position <Icon name="arrow" /></button><button className="text-button" onClick={() => document.querySelector('#how')?.scrollIntoView({ behavior: 'smooth' })}>See how it works</button></div>
-      <div className="live-pill"><i></i> {markPrice ? `Live Strike BTC mark price · ${markPrice.s}` : 'Connecting to Strike mainnet'} {dataError && <button onClick={() => setToast(dataError)}>Details</button>}</div>
+      <div className="live-pill"><i></i> {markPrice ? `Live Strike ${displaySymbol(markPrice.s)} mark price` : 'Connecting to Strike mainnet'} {dataError && <button onClick={() => setToast(dataError)}>Details</button>}</div>
     </section>
 
     <section className="dashboard" id="position">
-      <div className="section-head"><div><span className="overline">DEMO POSITION · LIVE MARKET PRICE</span><h2>BTC-USD <b>Long</b></h2></div><div className="price"><span>Strike mark price</span><strong>{markPrice ? usd.format(price) : 'Loading…'}</strong><small>{markPrice ? `Index ${usd.format(Number(markPrice.i))}` : 'Waiting for price stream'}</small></div></div>
+      <div className="section-head"><div><span className="overline">DEMO POSITION. LIVE MARKET PRICE.</span><h2>BTC / USD <b>Long</b></h2></div><div className="price"><span>Strike mark price</span><strong>{markPrice ? usd.format(price) : 'Loading…'}</strong><small>{markPrice ? `Index ${usd.format(Number(markPrice.i))}` : 'Waiting for price stream'}</small></div></div>
       <div className="grid">
         <article className="risk-card">
           <div className="card-label"><span>Liquidation risk</span><button className="info">i</button></div>
@@ -109,7 +111,7 @@ export default function App() {
     </section>
 
     <section className="monitor" id="monitor">
-      <div className="monitor-top"><div><span className="overline">OSPAZ AI MONITOR</span><h2>See what is working before you trust it.</h2><p>One plain-language analysis for your Strike bots, native vaults, and copy-trader candidates.</p></div><button className="primary" onClick={() => { setLastScan('Refreshing live public data'); void Promise.all([loadVaults(), loadLeaders()]).then(([nextVaults, nextLeaders]) => { setVaults(nextVaults); setLeaders(nextLeaders); setLastScan('Live public data refreshed') }).catch(() => setDataError('Could not refresh live public data.')) }}><Icon name="bolt" /> Run analysis</button></div>
+      <div className="monitor-top"><div><span className="overline">OSPAZ AI MONITOR</span><h2>See what is working before you trust it.</h2><p>One plain language analysis for your Strike bots, native vaults, and copy trader candidates.</p></div><button className="primary" onClick={() => { setLastScan('Refreshing live public data'); void Promise.all([loadVaults(), loadLeaders()]).then(([nextVaults, nextLeaders]) => { setVaults(nextVaults); setLeaders(nextLeaders); setLastScan('Live public data refreshed') }).catch(() => setDataError('Could not refresh live public data.')) }}><Icon name="bolt" /> Run analysis</button></div>
       <div className="monitor-shell">
         <div className="monitor-tabs" role="tablist" aria-label="Ospaz monitor categories">
           <button className={monitorTab === 'bots' ? 'selected' : ''} onClick={() => setMonitorTab('bots')} role="tab" aria-selected={monitorTab === 'bots'}>Bot health</button>
@@ -118,7 +120,7 @@ export default function App() {
           <span className="scan-time"><i></i>{lastScan}</span>
         </div>
         <div className="monitor-intro">
-          {monitorTab === 'bots' && <><span className="monitor-icon"><Icon name="bolt" /></span><div><h3>Bot health, without guessing</h3><p>Ospaz flags a bot only from recorded status, strategy progress, child-order activity, and clear errors.</p></div></>}
+          {monitorTab === 'bots' && <><span className="monitor-icon"><Icon name="bolt" /></span><div><h3>Bot health, without guessing</h3><p>Ospaz flags a bot only from recorded status, strategy progress, child order activity, and clear errors.</p></div></>}
           {monitorTab === 'vaults' && <><span className="monitor-icon"><Icon name="shield" /></span><div><h3>Vault eligibility, clearly defined</h3><p>“Operational” means the public record is active and has the required health signals. It is not an investment recommendation.</p></div></>}
           {monitorTab === 'traders' && <><span className="monitor-icon"><Icon name="chart" /></span><div><h3>Copy with context</h3><p>Success rate means historical winning-trade percentage. Ospaz pairs it with drawdown and history length before recommending a fit.</p></div></>}
         </div>
@@ -127,10 +129,10 @@ export default function App() {
             const bot = item.symbol ? item : null
             const scoredRecord = item.metric ? item : null
             const tone = item.status.includes('Working') || item.status.includes('Operational') || item.status.includes('Compatible') ? 'good' : item.status.includes('Review') || item.status.includes('High') ? 'caution' : 'bad'
-            return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{item.name}</strong>{bot && <span>{bot.symbol}</span>}</div><div className="row-analysis"><b className={tone}>{item.status}</b><small>{item.detail}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{bot.tag}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
+            return <article className="monitor-row" key={item.name}><div className="row-title"><strong>{displayText(item.name)}</strong>{bot && <span>{displaySymbol(bot.symbol!)}</span>}</div><div className="row-analysis"><b className={tone}>{displayText(item.status)}</b><small>{displayText(item.detail)}</small></div><div className="row-metric">{bot ? <span className={bot.tag === 'Active' ? 'status-active' : bot.tag === 'Check range' ? 'status-check' : 'status-stopped'}>{displayText(bot.tag!)}</span> : <strong>{scoredRecord?.metric}</strong>}</div></article>
           })}
         </div>
-        <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Bot analysis requires your authenticated read-only API wallet; Ospaz will never request a private key or place an order during monitoring.</div>
+        <div className="monitor-disclosure"><span>{markPrice ? 'Live mainnet data' : 'Connecting'}</span> Vault and trader analytics are read from Strike public APIs. Bot analysis requires your authenticated read only API wallet; Ospaz will never request a private key or place an order during monitoring.</div>
       </div>
     </section>
 

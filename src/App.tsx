@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { loadAccount, loadLeaders, loadMarkPrice, loadPositions, loadVaults, openMarkPriceStream, type Leader, type MarkPrice, type StrikeAccount, type StrikePosition, type Vault } from './strike'
+import { connectWallet, discoverWallets, type WalletOption } from './wallet'
 
 type Plan = 'margin' | 'reduce' | 'stop'
 type MonitorTab = 'bots' | 'vaults' | 'traders'
@@ -39,6 +40,10 @@ export default function App() {
   const [selectedTrader, setSelectedTrader] = useState('')
   const [copyAllocation, setCopyAllocation] = useState('25')
   const [copyState, setCopyState] = useState('')
+  const [walletOptions, setWalletOptions] = useState<WalletOption[]>([])
+  const [showWalletPicker, setShowWalletPicker] = useState(false)
+  const [walletAddress, setWalletAddress] = useState('')
+  const [walletName, setWalletName] = useState('')
 
   useEffect(() => {
     let alive = true
@@ -108,11 +113,30 @@ export default function App() {
     setCopyState(`Paper copy ready for ${displayText(copyCandidate.nickname || copyCandidate.ada_handle || copyCandidate.account_id.slice(0, 8))}. No order was sent to Strike.`)
   }
 
+  const openWalletPicker = () => {
+    setWalletOptions(discoverWallets())
+    setShowWalletPicker(true)
+  }
+
+  const chooseWallet = async (wallet: WalletOption) => {
+    try {
+      const address = await connectWallet(wallet.provider)
+      setWalletAddress(address)
+      setWalletName(wallet.name)
+      setShowWalletPicker(false)
+      setToast(`${wallet.name} connected: ${address.slice(0, 6)}…${address.slice(-4)}`)
+      window.setTimeout(() => setToast(''), 5000)
+    } catch (error) {
+      setToast(error instanceof Error ? error.message : 'Wallet connection was cancelled')
+      window.setTimeout(() => setToast(''), 5000)
+    }
+  }
+
   return <main className={theme === 'dark' ? 'theme-dark' : ''}>
     <nav>
       <a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a>
       <div className="nav-links"><a href="#position">My position</a><a href="#monitor">AI monitor</a><a href="#how">How it works</a></div>
-      <div className="nav-actions"><button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}><span className="theme-dot"></span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</button><button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read only.')}><Icon name="wallet" /> Connect Strike</button></div>
+      <div className="nav-actions"><button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}><span className="theme-dot"></span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</button><button className="wallet-button" onClick={openWalletPicker}><Icon name="wallet" /> {walletAddress ? `${walletName} ${walletAddress.slice(0, 6)}…${walletAddress.slice(-4)}` : 'Connect wallet'}</button></div>
     </nav>
 
     <section className="hero" id="top">
@@ -182,6 +206,7 @@ export default function App() {
     <section className="how" id="how"><span className="overline">HOW IT WORKS</span><h2>Live market facts. Clear personal decisions.</h2><p className="how-intro">Ospaz separates what Strike publishes publicly from what only you can approve with your account.</p><div className="steps"><div><span>01</span><Icon name="chart" /><h3>Read the live market</h3><p>Ospaz receives the Strike BTC / USD mark price, index price, and funding data as it updates.</p></div><div><span>02</span><Icon name="bolt" /><h3>Check public records</h3><p>Vault status, verification, equity, trader history, win rate, and drawdown are assessed from Strike public data.</p></div><div><span>03</span><Icon name="shield" /><h3>Protect your privacy</h3><p>Your personal positions and bot activity stay unavailable until you choose to connect a dedicated Strike API wallet.</p></div><div><span>04</span><Icon name="wallet" /><h3>You approve every action</h3><p>Today, protection choices are previews only. Ospaz does not submit a trade, margin transfer, or stop order.</p></div></div></section>
 
     {showPlan && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowPlan(false)}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" onMouseDown={(event) => event.stopPropagation()}><button className="close" aria-label="Close" onClick={() => setShowPlan(false)}><Icon name="close" /></button><span className="overline">OSPAZ PROTECTION PLAN</span><h2 id="modal-title">Make this trade safer</h2><p className="modal-intro">Choose an action. Nothing is sent to Strike until you approve.</p><button className="plan recommended" onClick={() => protect('margin')}><span className="plan-icon"><Icon name="shield" /></span><span><b>Add $20 margin <em>Recommended</em></b><small>Moves liquidation to $60,130 and keeps your full position open.</small></span><Icon name="arrow" /></button><button className="plan" onClick={() => protect('reduce')}><span className="plan-icon"><Icon name="chart" /></span><span><b>Close 25% of my position</b><small>Reduces exposure and moves liquidation to $61,740.</small></span><Icon name="arrow" /></button><button className="plan" onClick={() => protect('stop')}><span className="plan-icon"><Icon name="bolt" /></span><span><b>Set a protective stop</b><small>Exit automatically at $62,880 before liquidation.</small></span><Icon name="arrow" /></button><p className="fine-print">Demo only. In production, Ospaz will require a connected Strike account and confirmation before submitting any order.</p></section></div>}
+    {showWalletPicker && <div className="modal-backdrop" role="presentation" onMouseDown={() => setShowWalletPicker(false)}><section className="modal wallet-picker" role="dialog" aria-modal="true" aria-labelledby="wallet-title" onMouseDown={(event) => event.stopPropagation()}><button className="close" aria-label="Close" onClick={() => setShowWalletPicker(false)}><Icon name="close" /></button><span className="overline">WALLET CONNECTION</span><h2 id="wallet-title">Choose a wallet</h2><p className="modal-intro">Ospaz requests only your public address. It never reads or stores your private key.</p>{walletOptions.length ? walletOptions.map((wallet) => <button className="wallet-option" key={wallet.id} onClick={() => void chooseWallet(wallet)}><span className="wallet-option-mark">{wallet.name.slice(0, 1)}</span><span><b>{wallet.name}</b><small>{wallet.detail}</small></span><Icon name="arrow" /></button>) : <div className="wallet-empty"><strong>No browser wallet detected</strong><p>Install the <a href="https://www.okx.com/web3" target="_blank" rel="noreferrer">OKX Wallet extension</a>, unlock it, then reload this page.</p></div>}</section></div>}
     {toast && <div className="toast"><Icon name="shield" />{toast}</div>}
     <footer><a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a><span>Built for safer perpetual trading on Strike.</span></footer>
   </main>

@@ -1,4 +1,5 @@
-import { liveStrikeOrder } from '../../lib/strike-api.mjs'
+import { liveStrikeOrder, liveStrikeRequest } from '../../lib/strike-api.mjs'
+import { getDailyLoss } from '../../lib/risk-ledger.mjs'
 
 const MIN_NOTIONAL = 10
 const allowedTypes = new Set(['market', 'limit', 'stop', 'stop_limit', 'take_profit', 'take_profit_limit', 'trailing_stop_market'])
@@ -15,7 +16,16 @@ export default async function handler(request, response) {
   if (body.confirmation_phrase !== 'CONFIRM LIVE BTC-USD ORDER') return fail(response, 400, 'Confirmation phrase does not match')
   if (String(body.symbol).toUpperCase() !== 'BTC-USD') return fail(response, 400, 'Only BTC-USD is enabled for live trading')
   if (!['buy', 'sell'].includes(body.side) || !allowedTypes.has(body.type)) return fail(response, 400, 'Unsupported order side or type')
-  if (body.reduce_only !== true) return fail(response, 400, 'Live orders must be reduce-only until an opening-order policy is explicitly enabled')
+  const opening = body.reduce_only !== true
+  if (opening && (process.env.OSPAZ_ALLOW_OPENING_ORDERS !== 'true' || body.opening_policy !== 'BTC-USD-2X-ISOLATED' || Number(body.leverage) !== 2 || body.margin_mode !== 'isolated')) return fail(response, 400, 'Opening orders require the approved BTC-USD 2x isolated policy')
+  if (!opening && body.reduce_only !== true) return fail(response, 400, 'reduce_only must be true for a closing order')
+
+  const lossLimit = Number(process.env.OSPAZ_DAILY_LOSS_LIMIT)
+  if (!Number.isFinite(lossLimit) || lossLimit <= 0) return fail(response, 503, 'Durable daily-loss limit is not configured')
+  try {
+    const ledger = await getDailyLoss(request)
+    if (ledger.loss >= lossLimit) return fail(response, 409, `Daily loss limit reached: ${ledger.loss.toFixed(2)} / ${lossLimit.toFixed(2)} USD`)
+  } catch (error) { return fail(response, 502, error.message) }
 
   const size = Number(body.size)
   if (!Number.isFinite(size) || size <= 0) return fail(response, 400, 'Order size must be positive')
@@ -30,7 +40,15 @@ export default async function handler(request, response) {
   if (notional < MIN_NOTIONAL) return fail(response, 400, `BTC-USD minimum order notional is $${MIN_NOTIONAL}`)
   if (notional > maxNotional) return fail(response, 400, `Order exceeds the configured $${maxNotional} notional cap`)
 
-  const order = { symbol: 'BTC-USD', side: body.side, type: body.type, size: String(body.size), reduce_only: true, client_order_id: String(body.client_order_id || `ospaz-${Date.now()}`) }
+  if (opening) {
+    try {
+      for (const [pathname, policy] of [['/v2/marginMode', { symbol: 'BTC-USD', marginMode: 'isolated' }], ['/v2/leverage', { symbol: 'BTC-USD', leverage: 2 }]]) {
+        const result = await liveStrikeRequest('POST', pathname, policy, request)
+        if (result.status < 200 || result.status >= 300) return fail(response, result.status, `Could not apply opening-order policy: ${JSON.stringify(result.payload)}`)
+      }
+    } catch (error) { return fail(response, 502, error.message) }
+  }
+  const order = { symbol: 'BTC-USD', side: body.side, type: body.type, size: String(body.size), reduce_only: !opening, client_order_id: String(body.client_order_id || `ospaz-${Date.now()}`) }
   for (const key of ['price', 'stop_price', 'time_in_force', 'working_type', 'price_protect', 'slippage']) if (body[key] !== undefined) order[key] = body[key]
   try {
     const result = await liveStrikeOrder(order, request)

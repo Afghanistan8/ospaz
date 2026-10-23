@@ -105,6 +105,16 @@ app.post('/api/strike/order', async (request, response) => {
   return orderHandler(request, response)
 })
 
+app.delete('/api/strike/order/cancel-all', async (request, response) => {
+  const { default: cancelHandler } = await import('./api/strike/cancel-all.mjs')
+  return cancelHandler(request, response)
+})
+
+app.get('/api/strike/risk-status', async (request, response) => {
+  const { default: riskHandler } = await import('./api/strike/risk-status.mjs')
+  return riskHandler(request, response)
+})
+
 app.post('/api/auth/nonce', (request, response) => {
   try {
     const challenge = createChallenge(request.body?.address, request)

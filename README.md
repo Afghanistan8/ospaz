@@ -41,13 +41,15 @@ Ospaz translates difficult liquidation and margin data into clear, user-controll
 
 6. Confirm live price data. The hero status should say `Live Strike BTC / USD mark price`, and the mark price in the position panel should populate. Wait a few seconds to see it refresh from Strike’s public WebSocket.
 
-7. Scroll to **Ospaz AI Monitor**. Select **Vault check** and **Copy trader fit**. The footer of that panel should say `Live mainnet data`, and the entries should populate from Strike public APIs.
+7. Test the display switch in the header. Select **Dark mode** and confirm the full interface changes to the dark canvas. Select **Light mode** to return. Refresh the page and confirm your choice is remembered.
 
-8. Select **Bot health**. `Account connection required` is the expected result today. Bot monitoring is deliberately unavailable until you connect an authenticated read only API wallet.
+8. Scroll to **Ospaz AI Monitor**. Select **Vault check** and **Copy trader fit**. The footer of that panel should say `Live mainnet data`, and the entries should populate from Strike public APIs.
 
-9. Test the protection flow. Select **Protect my position**, choose any option, and confirm that the toast says it is a preview. No order, margin transfer, or wallet transaction should occur.
+9. Select **Bot health**. `Account connection required` is the expected result today. Bot monitoring is deliberately unavailable until you connect an authenticated read only API wallet.
 
-10. Stop the local server when you are done by selecting the PowerShell window and pressing `Ctrl + C`.
+10. Test the protection flow. Select **Protect my position**, choose any option, and confirm that the toast says it is a preview. No order, margin transfer, or wallet transaction should occur.
+
+11. Stop the local server when you are done by selecting the PowerShell window and pressing `Ctrl + C`.
 
 The local bridge only permits the public endpoints Ospaz uses. It does not hold an API private key and it cannot submit an order.
 

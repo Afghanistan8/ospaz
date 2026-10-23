@@ -23,6 +23,7 @@ function Icon({ name }: { name: string }) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => localStorage.getItem('ospaz-theme') === 'dark' ? 'dark' : 'light')
   const [markPrice, setMarkPrice] = useState<MarkPrice | null>(null)
   const [vaults, setVaults] = useState<Vault[]>([])
   const [leaders, setLeaders] = useState<Leader[]>([])
@@ -53,6 +54,10 @@ export default function App() {
     return () => { alive = false; closeStream(); window.clearInterval(refresh) }
   }, [])
 
+  useEffect(() => {
+    localStorage.setItem('ospaz-theme', theme)
+  }, [theme])
+
   const price = Number(markPrice?.p ?? 0)
   const monitorData: Record<MonitorTab, MonitorItem[]> = useMemo(() => ({
     bots: [{ name: 'Your Strike bots', status: 'Account connection required', detail: 'Grid and TWAP status are authenticated Strike data. Connect an API wallet before Ospaz can inspect bot health.', metric: 'Read only access', tag: 'Connect' }],
@@ -71,11 +76,11 @@ export default function App() {
     window.setTimeout(() => setToast(''), 5000)
   }
 
-  return <main>
+  return <main className={theme === 'dark' ? 'theme-dark' : ''}>
     <nav>
       <a className="brand" href="#top"><span className="brand-mark"><Icon name="shield" /></span>ospaz</a>
       <div className="nav-links"><a href="#position">My position</a><a href="#monitor">AI monitor</a><a href="#how">How it works</a></div>
-      <button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read only.')}><Icon name="wallet" /> Connect Strike</button>
+      <div className="nav-actions"><button className="theme-toggle" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} aria-label={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}><span className="theme-dot"></span>{theme === 'light' ? 'Dark mode' : 'Light mode'}</button><button className="wallet-button" onClick={() => setToast('Account connection is the next step: create a Strike API wallet, then connect it read only.')}><Icon name="wallet" /> Connect Strike</button></div>
     </nav>
 
     <section className="hero" id="top">

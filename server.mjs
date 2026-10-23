@@ -98,6 +98,13 @@ app.get('/api/strike/positions', async (request, response) => {
   catch (error) { response.status(error.message.includes('authentication') || error.message.includes('Wallet') ? 401 : 502).json({ error: error.message }) }
 })
 
+// The live route is shared with Vercel, but stays disabled unless the explicit
+// OSPAZ_LIVE_TRADING_ENABLED feature flag and risk configuration are present.
+app.post('/api/strike/order', async (request, response) => {
+  const { default: orderHandler } = await import('./api/strike/order.mjs')
+  return orderHandler(request, response)
+})
+
 app.post('/api/auth/nonce', (request, response) => {
   try {
     const challenge = createChallenge(request.body?.address, request)

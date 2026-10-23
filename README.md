@@ -58,6 +58,12 @@ Ospaz translates difficult liquidation and margin data into clear, user-controll
 
 The local bridge only permits the public endpoints Ospaz uses. It does not hold an API private key and it cannot submit an order.
 
+## Live-order route safety
+
+Ospaz now includes a guarded `POST /api/strike/order` adapter for a future live integration. It is disabled by default. The route refuses requests unless `OSPAZ_LIVE_TRADING_ENABLED=true`, `OSPAZ_MAX_ORDER_NOTIONAL` is configured, the connected wallet matches the Strike account, the request contains the exact confirmation phrase, and the order is BTC-USD, reduce-only, and above Strike's minimum notional. The default application UI remains paper-only; no live request is made during local testing.
+
+The adapter must not be enabled for production until a durable daily-loss ledger, emergency cancellation path, and an operator-reviewed opening-order policy are added. A Vercel environment variable alone is not a substitute for those controls.
+
 ## Production integration plan
 
 1. Create a dedicated Strike API wallet for Ospaz. Do not paste its private key into chat, source code, or a public deployment.
